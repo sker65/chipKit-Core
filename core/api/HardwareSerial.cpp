@@ -467,24 +467,33 @@ HardwareSerial::operator int() {
 
 void HardwareSerial::doSerialInt(void)
 {
-	int		bufIndex;
-	uint8_t	ch;
+   int      bufIndex;
+   uint8_t   ch;
+   uint32_t tmp_mode;
 
-	/* If it's a receive interrupt, get the character and store
-	** it in the receive buffer.
-	*/
-	if ((ifs->reg & bit_rx) != 0)
-	{
-		ch = uart->uxRx.reg;
-        if (rxIntr != NULL) {
-            /* If we have had an interrupt callback routine defined then call
-            ** that instead of adding the character to the queue. Pass the
-            ** received character to the function for processing.
-            */
-            rxIntr(ch);
-        } else {
-            bufIndex	= (rx_buffer.head + 1) % RX_BUFFER_SIZE;
-        
+   /* If it's a receive interrupt, get the character and store
+   ** it in the receive buffer.
+   */
+   if ((ifs->reg & bit_rx) != 0)
+   {
+      // while bytes available
+      while(uart->uxSta.reg & 0x01)
+      {
+         // error check
+         if(uart->uxSta.reg & 0x04) // checking FERR 0x04
+         {
+            ch = uart->uxRx.reg; // dispose of byte
+         }
+         else if(uart->uxSta.reg & 0x02) // checking OERR 0x02
+         {
+            // clear OERR bit
+            uart->uxSta.clr = 0x02;
+         }
+         else
+         {
+            ch = uart->uxRx.reg;
+            bufIndex   = (rx_buffer.head + 1) % RX_BUFFER_SIZE;
+
             /* If we should be storing the received character into the location
             ** just before the tail (meaning that the head would advance to the
             ** current location of the tail), we're about to overflow the buffer
@@ -492,26 +501,29 @@ void HardwareSerial::doSerialInt(void)
             */
             if (bufIndex != rx_buffer.tail)
             {
-                rx_buffer.buffer[rx_buffer.head] = ch;
-                rx_buffer.head = bufIndex;
+               rx_buffer.buffer[rx_buffer.head] = ch;
+               rx_buffer.head = bufIndex;
             }
-        }
-        /* Clear the interrupt flag.
-        */
-		ifs->clr = bit_rx;
-	}
+         } // if error check
+      } // while
 
-	/* If it's a transmit interrupt, ignore it, as we don't current
-	** have interrupt driven i/o on the transmit side.
-	*/
-	if ((ifs->reg & bit_tx) != 0)
-	{
-		/* Clear the interrupt flag.
-		*/
-		ifs->clr = bit_tx;
-	}
+      /* Clear the interrupt flag.
+      */
+      ifs->clr = bit_rx;
+   }
+
+   /* If it's a transmit interrupt, ignore it, as we don't current
+   ** have interrupt driven i/o on the transmit side.
+   */
+   if ((ifs->reg & bit_tx) != 0)
+   {
+      /* Clear the interrupt flag.
+      */
+      ifs->clr = bit_tx;
+   }
 
 }
+
 
 /* Attach the interrupt by storing a function pointer in the rxIntr variable */
 void HardwareSerial::attachInterrupt(void (*callback)(int)) {
